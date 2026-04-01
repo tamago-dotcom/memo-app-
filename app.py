@@ -1,4 +1,5 @@
 import json as _json
+import os
 from flask import Flask, request, redirect, url_for, render_template, flash, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
@@ -6,8 +7,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 
 app: Flask = Flask(__name__)
-app.secret_key = "memo-app-secret"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///memo.sqlite"
+app.secret_key = os.environ.get("SECRET_KEY", "memo-app-secret")
+db_path = os.environ.get("DATABASE_URL", "sqlite:///memo.sqlite")
+app.config["SQLALCHEMY_DATABASE_URI"] = db_path
 db: SQLAlchemy = SQLAlchemy(app)
 
 
