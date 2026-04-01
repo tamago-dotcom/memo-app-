@@ -1,0 +1,838 @@
+{% extends "base.html" %}
+{% block contents %}
+<style>
+    #board-container {
+        width: 100%;
+        height: calc(100vh - 150px);
+        overflow: auto;
+        background-color: #c9a96e;
+        background-image:
+            radial-gradient(circle, #b8935a 1px, transparent 1px),
+            radial-gradient(circle, #b8935a 1px, transparent 1px);
+        background-size: 30px 30px;
+        background-position: 0 0, 15px 15px;
+        position: relative;
+        border-radius: 6px;
+    }
+    [data-theme="dark"] #board-container {
+        background-color: #3a2a10;
+        background-image:
+            radial-gradient(circle, #2a1a00 1px, transparent 1px),
+            radial-gradient(circle, #2a1a00 1px, transparent 1px);
+    }
+    #board { width: 3000px; height: 2000px; position: relative; }
+
+    /* ── 付箋カード ── */
+    .memo-card {
+        position: absolute;
+        width: 200px;
+        min-height: 80px;
+        max-height: 230px;
+        overflow: hidden;
+        border-radius: 4px;
+        box-shadow: 3px 4px 10px rgba(0,0,0,0.3);
+        padding: 8px 10px 6px;
+        cursor: move;
+        user-select: none;
+        transition: box-shadow 0.1s;
+        word-break: break-word;
+        z-index: 2;
+    }
+    .memo-card:hover { box-shadow: 5px 6px 16px rgba(0,0,0,0.4); }
+    .memo-card.dragging { box-shadow: 8px 10px 24px rgba(0,0,0,0.5); opacity: 0.9; z-index: 1000; }
+    .memo-card .memo-title {
+        font-size: 0.85rem; font-weight: bold; color: #333;
+        line-height: 1.3; pointer-events: none; margin-bottom: 3px;
+    }
+    .memo-card .memo-body-preview {
+        font-size: 0.7rem; color: #555; line-height: 1.4;
+        max-height: 90px; overflow: hidden; pointer-events: none;
+    }
+    .memo-card .memo-body-preview p { margin: 0 0 2px 0; }
+    .memo-card .memo-body-preview h1,.memo-card .memo-body-preview h2,
+    .memo-card .memo-body-preview h3 { font-size: 0.75rem; font-weight: bold; margin: 0 0 2px 0; }
+    .memo-card .memo-body-preview ul,.memo-card .memo-body-preview ol { margin: 0; padding-left: 14px; }
+    .memo-card .memo-body-preview li { margin: 0; }
+    .memo-card .memo-tags-display {
+        margin-top: 3px; pointer-events: none;
+        display: flex; flex-wrap: wrap; gap: 2px;
+    }
+    .memo-card .memo-footer {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-top: 4px;
+    }
+    .memo-card .memo-date {
+        font-size: 0.6rem; color: #888; pointer-events: none;
+    }
+    .vote-btn {
+        background: none; border: 1px solid #bbb; border-radius: 10px;
+        padding: 1px 5px; font-size: 0.65rem; cursor: pointer;
+        display: flex; align-items: center; gap: 2px; color: #666;
+        transition: all 0.1s; line-height: 1.4;
+    }
+    .vote-btn:hover { background: #fef3c7; border-color: #f59e0b; }
+    .vote-btn.voted { background: #fef3c7; border-color: #f59e0b; color: #d97706; font-weight: bold; }
+    [data-theme="dark"] .memo-card { filter: brightness(0.72) saturate(0.9); }
+    [data-theme="dark"] .memo-card .memo-title { color: #1a1a1a; }
+
+    /* ── 描画レイヤー ── */
+    #drawing-layer {
+        position: absolute; top: 0; left: 0;
+        width: 3000px; height: 2000px;
+        pointer-events: none; z-index: 1;
+    }
+    #board.drawing-active .memo-card { pointer-events: none; cursor: crosshair; }
+    #board.drawing-active #drawing-layer { pointer-events: all; cursor: crosshair; z-index: 4; }
+    #board.eraser-active .memo-card { pointer-events: none; }
+    #board.eraser-active #drawing-layer { pointer-events: all; cursor: cell; z-index: 4; }
+    #board.eraser-active #drawing-layer g.own-drawing { cursor: pointer; }
+    #board.eraser-active #drawing-layer g.own-drawing:hover * { stroke-opacity: 0.4; }
+
+    /* ── ツールバー ── */
+    .tool-btn.is-active, .width-btn.is-active { background: #fff !important; color: #333 !important; font-weight: bold; }
+    .color-swatch {
+        width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+        border: 2px solid transparent; flex-shrink: 0; transition: border-color 0.1s, transform 0.1s;
+    }
+    .color-swatch:hover { transform: scale(1.2); }
+    .color-swatch.active { border-color: white; transform: scale(1.15); }
+
+    /* ── 付箋カラー選択 ── */
+    .memo-color-swatch {
+        width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+        border: 2px solid transparent; display: inline-block;
+        transition: border-color 0.1s, transform 0.1s;
+    }
+    .memo-color-swatch:hover { transform: scale(1.15); }
+    .memo-color-swatch.active { border-color: #555; transform: scale(1.1); }
+
+    /* ── タグフィルターバー ── */
+    #tag-filter-bar { gap: 6px; margin-bottom: 5px; flex-wrap: wrap; align-items: center; }
+    .tag-filter-btn.is-active { font-weight: bold; }
+
+    /* ── コメント ── */
+    .comment-item {
+        padding: 6px 0; border-bottom: 1px solid #eee; font-size: 0.82rem;
+    }
+    .comment-item:last-child { border-bottom: none; }
+    [data-theme="dark"] .comment-item { border-color: #444; }
+
+    .modal-card-foot { flex-wrap: wrap; gap: 8px; }
+</style>
+
+<!-- ── メインツールバー ── -->
+<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+    <a href="{{ url_for('index') }}" class="button is-small is-light">← フォルダ一覧</a>
+    <span class="is-size-6" style="font-weight:bold;">📁 {{ folder.name }}</span>
+    <div style="margin-left:auto; display:flex; gap:6px; align-items:center;">
+        <form method="GET" action="{{ url_for('board', folder_id=folder.id) }}" style="display:flex; gap:4px;">
+            <input class="input is-small" type="text" name="q" value="{{ q }}" placeholder="付箋を検索…" style="width:140px;">
+            <button class="button is-small is-info" type="submit">🔍</button>
+            {% if q %}<a href="{{ url_for('board', folder_id=folder.id) }}" class="button is-small">✕</a>{% endif %}
+        </form>
+        <button class="button is-small is-warning is-light" onclick="showRanking()" title="貢献スコアランキング">🏆</button>
+        <button class="button is-small is-primary"
+                onclick="document.getElementById('new-memo-modal').classList.add('is-active')">
+            ＋ 新規付箋
+        </button>
+    </div>
+</div>
+
+<!-- ── 描画ツールバー ── -->
+<div style="display:flex; align-items:center; gap:6px; margin-bottom:5px; flex-wrap:wrap;
+            background:rgba(0,0,0,0.2); padding:5px 10px; border-radius:4px;">
+    <span class="is-size-7 has-text-white" style="font-weight:bold;">ツール:</span>
+    <button class="button is-small tool-btn is-active" data-tool="move" onclick="setTool('move')">✋ 移動</button>
+    <button class="button is-small tool-btn" data-tool="pen" onclick="setTool('pen')">✏️ ペン</button>
+    <button class="button is-small tool-btn" data-tool="arrow" onclick="setTool('arrow')">➡ 矢印</button>
+    <button class="button is-small tool-btn" data-tool="eraser" onclick="setTool('eraser')">🧹 消しゴム</button>
+    <div style="width:1px; height:20px; background:rgba(255,255,255,0.3); margin:0 2px;"></div>
+    <span class="is-size-7 has-text-white">色:</span>
+    <div style="display:flex; gap:3px; align-items:center;">
+        <div class="color-swatch active" data-color="#e74c3c" style="background:#e74c3c;" onclick="setColor('#e74c3c')"></div>
+        <div class="color-swatch" data-color="#3498db" style="background:#3498db;" onclick="setColor('#3498db')"></div>
+        <div class="color-swatch" data-color="#2ecc71" style="background:#2ecc71;" onclick="setColor('#2ecc71')"></div>
+        <div class="color-swatch" data-color="#f39c12" style="background:#f39c12;" onclick="setColor('#f39c12')"></div>
+        <div class="color-swatch" data-color="#9b59b6" style="background:#9b59b6;" onclick="setColor('#9b59b6')"></div>
+        <div class="color-swatch" data-color="#1a1a1a" style="background:#1a1a1a;" onclick="setColor('#1a1a1a')"></div>
+        <input type="color" id="custom-color" value="#e74c3c"
+               style="width:22px; height:22px; padding:0; border:2px solid rgba(255,255,255,0.5); cursor:pointer; border-radius:3px;"
+               onchange="setColor(this.value)">
+    </div>
+    <div style="width:1px; height:20px; background:rgba(255,255,255,0.3); margin:0 2px;"></div>
+    <span class="is-size-7 has-text-white">太さ:</span>
+    <button class="button is-small width-btn is-active" data-width="2" onclick="setWidth(2)">細</button>
+    <button class="button is-small width-btn" data-width="4" onclick="setWidth(4)">中</button>
+    <button class="button is-small width-btn" data-width="8" onclick="setWidth(8)">太</button>
+    <div style="width:1px; height:20px; background:rgba(255,255,255,0.3); margin:0 2px;"></div>
+    <button class="button is-small is-warning is-light" onclick="undoDrawing()">↩ Undo</button>
+    <button class="button is-small is-danger is-light" onclick="clearAllDrawings()">🗑 クリア</button>
+</div>
+
+<!-- ── タグフィルターバー ── -->
+<div id="tag-filter-bar" style="display:none; margin-bottom:5px;" class="is-flex">
+    <span class="is-size-7" style="font-weight:bold; margin-right:4px; line-height:2;">🏷 絞り込み:</span>
+</div>
+
+{% with messages = get_flashed_messages() %}
+{% if messages %}
+<div class="notification is-warning is-light mb-2 p-2">{{ messages[0] }}</div>
+{% endif %}
+{% endwith %}
+
+<!-- ── コルクボード ── -->
+<div id="board-container">
+    <div id="board">
+        {% for memo in memos %}
+        <div class="memo-card"
+             data-memo-id="{{ memo.id }}"
+             data-title="{{ memo.title | e }}"
+             data-body="{{ memo.body | e }}"
+             data-color="{{ memo.color }}"
+             data-tags="{{ memo.tags or '' }}"
+             data-is-public="{{ 'true' if memo.is_public else 'false' }}"
+             data-owner-id="{{ memo.user_id }}"
+             data-vote-count="{{ vote_counts.get(memo.id, 0) }}"
+             data-user-voted="{{ 'true' if memo.id in user_voted else 'false' }}"
+             style="left:{{ memo.pos_x }}px; top:{{ memo.pos_y }}px; background:{{ memo.color }};">
+            <div class="memo-title">{{ memo.title }}</div>
+            <div class="memo-body-preview"></div>
+            <div class="memo-tags-display"></div>
+            <div class="memo-footer">
+                <span class="memo-date">{{ memo.updated_at.strftime('%m/%d %H:%M') if memo.updated_at else '' }}</span>
+                {% if memo.is_public %}
+                <button class="vote-btn">👍 <span class="vote-count">{{ vote_counts.get(memo.id, 0) }}</span></button>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        <svg id="drawing-layer" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+</div>
+
+<!-- ── 新規付箋モーダル ── -->
+<div id="new-memo-modal" class="modal">
+    <div class="modal-background" onclick="this.parentElement.classList.remove('is-active')"></div>
+    <div class="modal-card">
+        <header class="modal-card-head">
+            <p class="modal-card-title">新規付箋</p>
+            <button class="delete" onclick="document.getElementById('new-memo-modal').classList.remove('is-active')"></button>
+        </header>
+        <section class="modal-card-body">
+            <form method="POST" action="{{ url_for('memo_new') }}" id="new-memo-form">
+                <input type="hidden" name="folder_id" value="{{ folder.id }}">
+                <input type="hidden" name="color" id="new-color" value="#fef08a">
+                <div class="field">
+                    <label class="label">タイトル</label>
+                    <input class="input" type="text" name="title" placeholder="タイトルを入力してください" autofocus>
+                </div>
+                <div class="field">
+                    <label class="label">本文 <span class="tag is-light is-small">Markdown対応</span></label>
+                    <textarea class="textarea" name="body" rows="5" placeholder="本文（Markdownが使えます）"></textarea>
+                </div>
+                <div class="field">
+                    <label class="label">タグ <span class="tag is-light is-small">カンマ区切り</span></label>
+                    <input class="input" type="text" name="tags" placeholder="例: アイデア, 課題, 決定事項">
+                </div>
+                <div class="field">
+                    <label class="label">付箋の色</label>
+                    <div id="new-color-picker" style="display:flex; gap:6px;">
+                        <div class="memo-color-swatch active" data-color="#fef08a" style="background:#fef08a;" onclick="setMemoColor('#fef08a','new-color','new-color-picker')"></div>
+                        <div class="memo-color-swatch" data-color="#bbf7d0" style="background:#bbf7d0;" onclick="setMemoColor('#bbf7d0','new-color','new-color-picker')"></div>
+                        <div class="memo-color-swatch" data-color="#bfdbfe" style="background:#bfdbfe;" onclick="setMemoColor('#bfdbfe','new-color','new-color-picker')"></div>
+                        <div class="memo-color-swatch" data-color="#fecdd3" style="background:#fecdd3;" onclick="setMemoColor('#fecdd3','new-color','new-color-picker')"></div>
+                        <div class="memo-color-swatch" data-color="#ffffff" style="background:#ffffff; border:1px solid #ccc;" onclick="setMemoColor('#ffffff','new-color','new-color-picker')"></div>
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="label">公開設定</label>
+                    <div class="control">
+                        <label class="radio"><input type="radio" name="is_public" value="false" checked> 🔒 非公開（自分のみ）</label>
+                        <br>
+                        <label class="radio"><input type="radio" name="is_public" value="true"> 🔓 公開（全員が編集・いいね・コメント可）</label>
+                    </div>
+                </div>
+            </form>
+        </section>
+        <footer class="modal-card-foot">
+            <button class="button is-primary" onclick="document.getElementById('new-memo-form').submit()">作成</button>
+            <button class="button" onclick="document.getElementById('new-memo-modal').classList.remove('is-active')">キャンセル</button>
+        </footer>
+    </div>
+</div>
+
+<!-- ── 付箋編集モーダル ── -->
+<div id="memo-modal" class="modal">
+    <div class="modal-background" onclick="closeMemoModal()"></div>
+    <div class="modal-card" style="width:620px; max-width:95vw;">
+        <header class="modal-card-head">
+            <p class="modal-card-title">付箋を編集</p>
+            <button class="delete" onclick="closeMemoModal()"></button>
+        </header>
+        <section class="modal-card-body" style="padding:1rem 1.5rem;">
+            <form method="POST" id="edit-memo-form">
+                <input type="hidden" name="color" id="edit-color" value="#fef08a">
+                <div class="field">
+                    <label class="label">タイトル</label>
+                    <input class="input" type="text" name="title" id="edit-title">
+                </div>
+                <div class="field">
+                    <label class="label">本文 <span class="tag is-light is-small">Markdown対応</span></label>
+                    <textarea class="textarea" name="body" id="edit-body" rows="5"></textarea>
+                </div>
+                <div class="field">
+                    <label class="label">タグ <span class="tag is-light is-small">カンマ区切り</span></label>
+                    <input class="input" type="text" name="tags" id="edit-tags" placeholder="例: アイデア, 課題">
+                </div>
+                <div class="field">
+                    <label class="label">付箋の色</label>
+                    <div id="edit-color-picker" style="display:flex; gap:6px;">
+                        <div class="memo-color-swatch active" data-color="#fef08a" style="background:#fef08a;" onclick="setMemoColor('#fef08a','edit-color','edit-color-picker')"></div>
+                        <div class="memo-color-swatch" data-color="#bbf7d0" style="background:#bbf7d0;" onclick="setMemoColor('#bbf7d0','edit-color','edit-color-picker')"></div>
+                        <div class="memo-color-swatch" data-color="#bfdbfe" style="background:#bfdbfe;" onclick="setMemoColor('#bfdbfe','edit-color','edit-color-picker')"></div>
+                        <div class="memo-color-swatch" data-color="#fecdd3" style="background:#fecdd3;" onclick="setMemoColor('#fecdd3','edit-color','edit-color-picker')"></div>
+                        <div class="memo-color-swatch" data-color="#ffffff" style="background:#ffffff; border:1px solid #ccc;" onclick="setMemoColor('#ffffff','edit-color','edit-color-picker')"></div>
+                    </div>
+                </div>
+            </form>
+
+            <!-- コメントセクション（公開メモのみ） -->
+            <div id="comment-section" style="display:none;">
+                <hr style="margin:0.75rem 0;">
+                <p style="font-weight:bold; margin-bottom:6px; font-size:0.9rem;">💬 コメント</p>
+                <div id="comment-list" style="max-height:180px; overflow-y:auto; margin-bottom:8px;"></div>
+                <div class="field has-addons" style="margin-bottom:0;">
+                    <div class="control is-expanded">
+                        <input class="input is-small" type="text" id="comment-input" placeholder="コメントを追加…">
+                    </div>
+                    <div class="control">
+                        <button class="button is-small is-info" onclick="postComment()">送信</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <footer class="modal-card-foot">
+            <div id="visibility-controls" style="display:none;">
+                <button class="button is-warning" id="visibility-btn" type="button" onclick="togglePublic()">🔒 非公開</button>
+            </div>
+            <div style="display:flex; gap:8px; margin-left:auto;">
+                <button class="button is-primary" id="save-btn" type="button"
+                        onclick="document.getElementById('edit-memo-form').submit()">💾 保存</button>
+                <form method="POST" id="delete-memo-form" style="margin:0;"
+                      onsubmit="return confirm('この付箋を削除しますか？')">
+                    <button class="button is-danger is-light" id="delete-btn" type="submit">🗑️ 削除</button>
+                </form>
+            </div>
+        </footer>
+    </div>
+</div>
+
+<!-- ── ランキングモーダル ── -->
+<div id="ranking-modal" class="modal">
+    <div class="modal-background" onclick="this.parentElement.classList.remove('is-active')"></div>
+    <div class="modal-card" style="max-width:380px;">
+        <header class="modal-card-head">
+            <p class="modal-card-title">🏆 貢献スコアランキング</p>
+            <button class="delete" onclick="document.getElementById('ranking-modal').classList.remove('is-active')"></button>
+        </header>
+        <section class="modal-card-body">
+            <div id="ranking-list"></div>
+        </section>
+        <footer class="modal-card-foot">
+            <p class="is-size-7" style="color:#888;">付箋追加 +3 ／ いいね獲得 +2 ／ コメント +1</p>
+        </footer>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+// ============================================================
+// 初期化
+// ============================================================
+
+const CURRENT_USER_ID = {{ current_user_id }};
+const FOLDER_ID = {{ folder.id }};
+
+function escapeHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// カード初期化（Markdown、タグ、投票ボタン）
+document.querySelectorAll('.memo-card').forEach(card => {
+    // 本文プレビュー
+    const body = card.dataset.body || '';
+    if (body.trim()) {
+        card.querySelector('.memo-body-preview').innerHTML = marked.parse(body);
+    }
+    // タグバッジ
+    const tagsStr = card.dataset.tags || '';
+    const tags = tagsStr.split(',').map(t => t.trim()).filter(Boolean);
+    const tagsDiv = card.querySelector('.memo-tags-display');
+    tags.forEach(tag => {
+        const span = document.createElement('span');
+        span.className = 'tag is-small is-info is-light';
+        span.style.cssText = 'margin:1px; pointer-events:none; font-size:0.6rem;';
+        span.textContent = '#' + tag;
+        tagsDiv.appendChild(span);
+    });
+    // 投票ボタン
+    const voteBtn = card.querySelector('.vote-btn');
+    if (voteBtn) {
+        if (card.dataset.userVoted === 'true') voteBtn.classList.add('voted');
+        voteBtn.addEventListener('mousedown', e => e.stopPropagation());
+        voteBtn.addEventListener('click', async e => {
+            e.stopPropagation();
+            const res = await fetch(`/api/memo/${card.dataset.memoId}/vote`, { method: 'POST' });
+            const data = await res.json();
+            card.querySelector('.vote-count').textContent = data.count;
+            card.dataset.userVoted = data.voted ? 'true' : 'false';
+            voteBtn.classList.toggle('voted', data.voted);
+        });
+    }
+});
+
+// タグフィルターバー初期化
+(function initTagFilter() {
+    const allTags = new Set();
+    document.querySelectorAll('.memo-card').forEach(card => {
+        (card.dataset.tags || '').split(',').map(t => t.trim()).filter(Boolean).forEach(t => allTags.add(t));
+    });
+    if (allTags.size === 0) return;
+    const bar = document.getElementById('tag-filter-bar');
+    bar.style.display = 'flex';
+    let activeTag = null;
+    allTags.forEach(tag => {
+        const btn = document.createElement('button');
+        btn.className = 'button is-small is-info is-light tag-filter-btn';
+        btn.textContent = '#' + tag;
+        btn.dataset.tag = tag;
+        btn.addEventListener('click', () => {
+            if (activeTag === tag) {
+                activeTag = null;
+                bar.querySelectorAll('.tag-filter-btn').forEach(b => b.classList.remove('is-active'));
+                document.querySelectorAll('.memo-card').forEach(c => c.style.display = '');
+            } else {
+                activeTag = tag;
+                bar.querySelectorAll('.tag-filter-btn').forEach(b => b.classList.toggle('is-active', b.dataset.tag === tag));
+                document.querySelectorAll('.memo-card').forEach(c => {
+                    const cardTags = (c.dataset.tags || '').split(',').map(t => t.trim());
+                    c.style.display = cardTags.includes(tag) ? '' : 'none';
+                });
+            }
+        });
+        bar.appendChild(btn);
+    });
+})();
+
+// 既存描画を読み込む
+const DRAWINGS = {{ drawings_json | safe }};
+DRAWINGS.forEach(d => renderDrawing(d));
+
+// ============================================================
+// 付箋カラー選択
+// ============================================================
+
+function setMemoColor(color, inputId, pickerId) {
+    document.getElementById(inputId).value = color;
+    document.getElementById(pickerId).querySelectorAll('.memo-color-swatch').forEach(s => {
+        s.classList.toggle('active', s.dataset.color === color);
+    });
+}
+
+// ============================================================
+// 付箋モーダル
+// ============================================================
+
+let currentMemoId = null;
+let currentIsPublic = false;
+
+function openMemoModal(card) {
+    currentMemoId = card.dataset.memoId;
+    currentIsPublic = card.dataset.isPublic === 'true';
+    const title = card.dataset.title;
+    const body = card.dataset.body;
+    const color = card.dataset.color || '#fef08a';
+    const tags = card.dataset.tags || '';
+    const ownerId = parseInt(card.dataset.ownerId);
+    const isOwner = (ownerId === CURRENT_USER_ID);
+    const canEdit = isOwner || currentIsPublic;
+
+    document.getElementById('edit-memo-form').action = `/memo/${currentMemoId}`;
+    document.getElementById('delete-memo-form').action = `/memo/${currentMemoId}/delete`;
+    document.getElementById('edit-title').value = title;
+    document.getElementById('edit-body').value = body;
+    document.getElementById('edit-tags').value = tags;
+    setMemoColor(color, 'edit-color', 'edit-color-picker');
+
+    // カラーピッカーの操作可否
+    document.getElementById('edit-color-picker').querySelectorAll('.memo-color-swatch').forEach(s => {
+        s.style.pointerEvents = canEdit ? 'auto' : 'none';
+        s.style.opacity = canEdit ? '1' : '0.5';
+    });
+
+    // オーナーのみ公開/非公開トグル
+    document.getElementById('visibility-controls').style.display = isOwner ? '' : 'none';
+    if (isOwner) updateVisibilityBtn(currentIsPublic);
+
+    // 編集・削除ボタン
+    document.getElementById('save-btn').style.display = canEdit ? '' : 'none';
+    document.getElementById('delete-btn').parentElement.style.display = canEdit ? '' : 'none';
+    document.getElementById('edit-title').readOnly = !canEdit;
+    document.getElementById('edit-body').readOnly = !canEdit;
+    document.getElementById('edit-tags').readOnly = !canEdit;
+
+    // コメントセクション（公開メモのみ）
+    const commentSection = document.getElementById('comment-section');
+    if (currentIsPublic) {
+        commentSection.style.display = '';
+        document.getElementById('comment-input').value = '';
+        loadComments(currentMemoId);
+    } else {
+        commentSection.style.display = 'none';
+    }
+
+    document.getElementById('memo-modal').classList.add('is-active');
+    if (canEdit) document.getElementById('edit-title').focus();
+}
+
+function closeMemoModal() {
+    document.getElementById('memo-modal').classList.remove('is-active');
+}
+
+function updateVisibilityBtn(isPublic) {
+    const btn = document.getElementById('visibility-btn');
+    btn.textContent = isPublic ? '🔓 公開中' : '🔒 非公開';
+    btn.className = isPublic ? 'button is-success' : 'button is-warning';
+}
+
+async function togglePublic() {
+    const res = await fetch(`/api/memo/${currentMemoId}/toggle-public`, { method: 'POST' });
+    const data = await res.json();
+    currentIsPublic = data.is_public;
+    updateVisibilityBtn(data.is_public);
+    const card = document.querySelector(`.memo-card[data-memo-id="${currentMemoId}"]`);
+    if (card) card.dataset.isPublic = data.is_public ? 'true' : 'false';
+    // 公開になった場合はコメントセクションを表示
+    const commentSection = document.getElementById('comment-section');
+    if (data.is_public) {
+        commentSection.style.display = '';
+        loadComments(currentMemoId);
+    } else {
+        commentSection.style.display = 'none';
+    }
+}
+
+// ============================================================
+// コメント
+// ============================================================
+
+async function loadComments(memoId) {
+    const list = document.getElementById('comment-list');
+    list.innerHTML = '<p style="color:#aaa;font-size:0.8rem;">読み込み中…</p>';
+    const res = await fetch(`/api/memo/${memoId}/comments`);
+    const data = await res.json();
+    list.innerHTML = '';
+    if (data.comments.length === 0) {
+        list.innerHTML = '<p style="color:#aaa;font-size:0.8rem;">コメントはまだありません</p>';
+        return;
+    }
+    data.comments.forEach(c => appendCommentEl(c));
+}
+
+function appendCommentEl(c) {
+    const list = document.getElementById('comment-list');
+    const div = document.createElement('div');
+    div.className = 'comment-item';
+    div.dataset.commentId = c.id;
+    div.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:4px;">
+            <strong style="font-size:0.78rem;">${escapeHtml(c.username)}</strong>
+            <span style="font-size:0.68rem; color:#aaa; flex:1; text-align:right;">${escapeHtml(c.created_at)}</span>
+            ${c.user_id === CURRENT_USER_ID
+                ? `<button onclick="deleteComment(${c.id},this)" style="background:none;border:none;cursor:pointer;color:#e74c3c;font-size:0.75rem;padding:0 2px;" title="削除">✕</button>`
+                : ''}
+        </div>
+        <div style="font-size:0.82rem; margin-top:2px;">${escapeHtml(c.body)}</div>`;
+    list.appendChild(div);
+    list.scrollTop = list.scrollHeight;
+}
+
+async function postComment() {
+    const input = document.getElementById('comment-input');
+    const body = input.value.trim();
+    if (!body) return;
+    const res = await fetch(`/api/memo/${currentMemoId}/comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body })
+    });
+    if (res.ok) {
+        const comment = await res.json();
+        input.value = '';
+        const emptyMsg = document.getElementById('comment-list').querySelector('p');
+        if (emptyMsg) emptyMsg.remove();
+        appendCommentEl(comment);
+    }
+}
+
+// Enterキーでコメント送信
+document.getElementById('comment-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); postComment(); }
+});
+
+async function deleteComment(commentId, btn) {
+    const res = await fetch(`/api/comment/${commentId}`, { method: 'DELETE' });
+    if (res.ok) {
+        const item = btn.closest('.comment-item');
+        item.remove();
+        if (document.getElementById('comment-list').children.length === 0) {
+            document.getElementById('comment-list').innerHTML = '<p style="color:#aaa;font-size:0.8rem;">コメントはまだありません</p>';
+        }
+    }
+}
+
+// ============================================================
+// ランキング
+// ============================================================
+
+async function showRanking() {
+    const res = await fetch(`/api/folder/${FOLDER_ID}/ranking`);
+    const data = await res.json();
+    const list = document.getElementById('ranking-list');
+    list.innerHTML = '';
+    if (data.ranking.length === 0) {
+        list.innerHTML = '<p style="color:#aaa; text-align:center;">まだスコアがありません</p>';
+    } else {
+        const medals = ['🥇', '🥈', '🥉'];
+        data.ranking.forEach((item, i) => {
+            const div = document.createElement('div');
+            div.style.cssText = `display:flex; align-items:center; gap:8px; padding:8px 6px; border-radius:4px;
+                                  ${item.user_id === data.current_user_id ? 'background:#eff8ff;' : ''}`;
+            div.innerHTML = `
+                <span style="font-size:1.2rem; width:2rem; text-align:center;">${medals[i] || (i + 1)}</span>
+                <span style="flex:1; font-weight:${item.user_id === data.current_user_id ? 'bold' : 'normal'};">
+                    ${escapeHtml(item.username)}
+                    ${item.user_id === data.current_user_id ? '<span class="tag is-small is-info is-light">自分</span>' : ''}
+                </span>
+                <span class="tag is-primary is-light">${item.score}pt</span>`;
+            list.appendChild(div);
+        });
+    }
+    document.getElementById('ranking-modal').classList.add('is-active');
+}
+
+// ============================================================
+// 描画ツール
+// ============================================================
+
+const svgLayer = document.getElementById('drawing-layer');
+let currentTool = 'move';
+let currentColor = '#e74c3c';
+let currentWidth = 2;
+let isDrawing = false;
+let drawingPoints = [];
+let arrowStart = null;
+let previewElement = null;
+let drawingHistory = [];
+
+function setTool(tool) {
+    currentTool = tool;
+    const board = document.getElementById('board');
+    board.classList.remove('drawing-active', 'eraser-active');
+    if (tool === 'pen' || tool === 'arrow') board.classList.add('drawing-active');
+    if (tool === 'eraser') board.classList.add('eraser-active');
+    document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.toggle('is-active', btn.dataset.tool === tool));
+}
+
+function setColor(color) {
+    currentColor = color;
+    document.getElementById('custom-color').value = color;
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('active', s.dataset.color === color));
+}
+
+function setWidth(w) {
+    currentWidth = w;
+    document.querySelectorAll('.width-btn').forEach(btn => btn.classList.toggle('is-active', parseInt(btn.dataset.width) === w));
+}
+
+function getBoardPos(e) {
+    const container = document.getElementById('board-container');
+    const r = container.getBoundingClientRect();
+    return { x: e.clientX - r.left + container.scrollLeft, y: e.clientY - r.top + container.scrollTop };
+}
+
+function createSVGEl(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+
+function applyStrokeStyle(el, color, width) {
+    el.setAttribute('fill', 'none');
+    el.setAttribute('stroke', color);
+    el.setAttribute('stroke-width', width);
+    el.setAttribute('stroke-linecap', 'round');
+    el.setAttribute('stroke-linejoin', 'round');
+}
+
+function calcArrowPath(x1, y1, x2, y2) {
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const headLen = Math.min(24, Math.max(10, len * 0.2));
+    const headAngle = Math.PI / 6;
+    const hx1 = x2 - headLen * Math.cos(angle - headAngle);
+    const hy1 = y2 - headLen * Math.sin(angle - headAngle);
+    const hx2 = x2 - headLen * Math.cos(angle + headAngle);
+    const hy2 = y2 - headLen * Math.sin(angle + headAngle);
+    return `M${x1},${y1} L${x2},${y2} M${x2},${y2} L${hx1},${hy1} M${x2},${y2} L${hx2},${hy2}`;
+}
+
+function renderDrawing(d) {
+    const g = createSVGEl('g');
+    g.dataset.drawingId = d.id;
+    g.dataset.userId = d.user_id;
+    if (d.type === 'pen') {
+        const pl = createSVGEl('polyline');
+        pl.setAttribute('points', d.data.points.map(p => p.join(',')).join(' '));
+        applyStrokeStyle(pl, d.color, d.width);
+        g.appendChild(pl);
+    } else if (d.type === 'arrow') {
+        const path = createSVGEl('path');
+        path.setAttribute('d', calcArrowPath(d.data.x1, d.data.y1, d.data.x2, d.data.y2));
+        applyStrokeStyle(path, d.color, d.width);
+        g.appendChild(path);
+    }
+    if (d.user_id === CURRENT_USER_ID) {
+        g.classList.add('own-drawing');
+        g.addEventListener('click', async e => {
+            if (currentTool !== 'eraser') return;
+            e.stopPropagation();
+            await fetch(`/api/drawing/${d.id}`, { method: 'DELETE' });
+            g.remove();
+            drawingHistory = drawingHistory.filter(id => id !== d.id);
+        });
+    }
+    svgLayer.appendChild(g);
+}
+
+async function saveDrawing(type, data) {
+    const res = await fetch(`/api/folder/${FOLDER_ID}/drawing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, data, color: currentColor, width: currentWidth })
+    });
+    return (await res.json()).id;
+}
+
+async function undoDrawing() {
+    if (drawingHistory.length === 0) return;
+    const lastId = drawingHistory[drawingHistory.length - 1];
+    const g = svgLayer.querySelector(`[data-drawing-id="${lastId}"]`);
+    if (g) {
+        await fetch(`/api/drawing/${lastId}`, { method: 'DELETE' });
+        g.remove();
+        drawingHistory.pop();
+    }
+}
+
+async function clearAllDrawings() {
+    if (!confirm('このボード上のすべての描画を削除しますか？')) return;
+    await fetch(`/api/folder/${FOLDER_ID}/drawings`, { method: 'DELETE' });
+    svgLayer.innerHTML = '';
+    drawingHistory = [];
+}
+
+svgLayer.addEventListener('mousedown', e => {
+    if (currentTool !== 'pen' && currentTool !== 'arrow') return;
+    if (e.button !== 0) return;
+    isDrawing = true;
+    const pos = getBoardPos(e);
+    if (currentTool === 'pen') {
+        drawingPoints = [[pos.x, pos.y]];
+        previewElement = createSVGEl('polyline');
+        applyStrokeStyle(previewElement, currentColor, currentWidth);
+        previewElement.setAttribute('points', `${pos.x},${pos.y}`);
+        svgLayer.appendChild(previewElement);
+    } else {
+        arrowStart = pos;
+        previewElement = createSVGEl('path');
+        applyStrokeStyle(previewElement, currentColor, currentWidth);
+        svgLayer.appendChild(previewElement);
+    }
+    e.preventDefault();
+});
+
+// ============================================================
+// ドラッグ&ドロップ
+// ============================================================
+
+let dragCard = null, dragOffsetX = 0, dragOffsetY = 0, hasMoved = false;
+
+document.querySelectorAll('.memo-card').forEach(card => {
+    card.addEventListener('mousedown', e => {
+        if (currentTool !== 'move' || e.button !== 0) return;
+        dragCard = card;
+        hasMoved = false;
+        const rect = card.getBoundingClientRect();
+        dragOffsetX = e.clientX - rect.left;
+        dragOffsetY = e.clientY - rect.top;
+        card.classList.add('dragging');
+        e.preventDefault();
+    });
+});
+
+document.addEventListener('mousemove', e => {
+    if (dragCard) {
+        hasMoved = true;
+        const container = document.getElementById('board-container');
+        const r = container.getBoundingClientRect();
+        const x = e.clientX - r.left - dragOffsetX + container.scrollLeft;
+        const y = e.clientY - r.top - dragOffsetY + container.scrollTop;
+        dragCard.style.left = Math.max(0, x) + 'px';
+        dragCard.style.top = Math.max(0, y) + 'px';
+    }
+    if (isDrawing && previewElement) {
+        const pos = getBoardPos(e);
+        if (currentTool === 'pen') {
+            drawingPoints.push([pos.x, pos.y]);
+            previewElement.setAttribute('points', drawingPoints.map(p => p.join(',')).join(' '));
+        } else if (currentTool === 'arrow' && arrowStart) {
+            previewElement.setAttribute('d', calcArrowPath(arrowStart.x, arrowStart.y, pos.x, pos.y));
+        }
+    }
+});
+
+document.addEventListener('mouseup', async e => {
+    if (dragCard) {
+        dragCard.classList.remove('dragging');
+        if (!hasMoved) {
+            openMemoModal(dragCard);
+        } else {
+            const memoId = dragCard.dataset.memoId;
+            fetch(`/api/memo/${memoId}/position`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: parseInt(dragCard.style.left), y: parseInt(dragCard.style.top) })
+            });
+        }
+        dragCard = null;
+    }
+    if (isDrawing) {
+        isDrawing = false;
+        if (previewElement) { previewElement.remove(); previewElement = null; }
+        const pos = getBoardPos(e);
+        if (currentTool === 'pen' && drawingPoints.length > 2) {
+            const id = await saveDrawing('pen', { points: drawingPoints });
+            renderDrawing({ id, type: 'pen', data: { points: drawingPoints }, color: currentColor, width: currentWidth, user_id: CURRENT_USER_ID });
+            drawingHistory.push(id);
+        } else if (currentTool === 'arrow' && arrowStart) {
+            const dx = pos.x - arrowStart.x, dy = pos.y - arrowStart.y;
+            if (Math.hypot(dx, dy) > 15) {
+                const data = { x1: arrowStart.x, y1: arrowStart.y, x2: pos.x, y2: pos.y };
+                const id = await saveDrawing('arrow', data);
+                renderDrawing({ id, type: 'arrow', data, color: currentColor, width: currentWidth, user_id: CURRENT_USER_ID });
+                drawingHistory.push(id);
+            }
+            arrowStart = null;
+        }
+        drawingPoints = [];
+    }
+});
+</script>
+{% endblock %}

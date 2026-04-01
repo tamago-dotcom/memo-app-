@@ -1,0 +1,44 @@
+<!-- base.html を拡張する -->
+{% extends "base.html" %}
+<!-- base.html の contents を書き換える -->
+{% block contents %}
+<div class='card p-3'>
+    <form method="GET" class="mb-3">
+        <div class="field has-addons">
+            <div class="control is-expanded">
+                <input class="input" type="text" name="q" value="{{ keyword }}" placeholder="キーワードで検索">
+            </div>
+            <div class="control">
+                <button class="button is-info" type="submit">検索</button>
+            </div>
+        </div>
+        <div class="field">
+            <label class="label">ソート順:</label>
+            <div class="control">
+                <label class="radio">
+                    <input type="radio" name="sort" value="title" {% if sort == 'title' %}checked{% endif %}>
+                    タイトル順
+                </label>
+                <label class="radio">
+                    <input type="radio" name="sort" value="updated" {% if sort == 'updated' %}checked{% endif %}>
+                    更新日時順（新しい順）
+                </label>
+            </div>
+        </div>
+    </form>
+    編集したいメモを選んでください:
+    <ul class='grid'>
+        {% for it in items %}
+        <li class="cell card p-4 m-2">
+            <a href="/memo/{{ it.id }}">
+                {% if it.id != 0 %}📍{% endif %}
+                {{ it.title }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+    <form method="POST" action="/logout" class="mt-3">
+        <button class="button is-light is-small" type="submit">ログアウト</button>
+    </form>
+</div>
+{% endblock %}

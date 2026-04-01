@@ -1,0 +1,39 @@
+<!-- base.html を拡張する -->
+{% extends "base.html" %}
+{% block contents %}
+<div class="card p-5" style="max-width:400px; margin:2rem auto;">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="notification {{ 'is-success' if messages[0][0] == 'success' else 'is-danger' }}">
+        {{ messages[0][1] }}
+    </div>
+    {% endif %}
+    {% endwith %}
+    <h2 class="is-size-5 mb-3">ログイン</h2>
+    <form method="POST">
+        <div class="field">
+            <label class="label" for="username">ログインID:</label>
+            <div class="control">
+                <input id="username" name="username" type="text" class="input"
+                    placeholder="ログインIDを入力してください">
+            </div>
+        </div>
+        <div class="field">
+            <label class="label" for="password">パスワード:</label>
+            <div class="control">
+                <input id="password" name="password" type="password" class="input"
+                    placeholder="パスワードを入力してください">
+            </div>
+        </div>
+        <div class="field">
+            <div class="control">
+                <input type="submit" value="ログイン" class="button is-primary">
+            </div>
+        </div>
+    </form>
+    <p class="mt-3 is-size-7">
+        アカウントをお持ちでない方は
+        <a href="{{ url_for('register') }}">新規登録</a>
+    </p>
+</div>
+{% endblock %}

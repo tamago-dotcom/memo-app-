@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block contents %}
+<div class="container" style="max-width:900px;">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="notification {{ 'is-success' if messages[0][0] == 'success' else 'is-danger' }} mb-3">
+        {{ messages[0][1] }}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
+        <h2 class="is-size-5">フォルダ一覧</h2>
+        <button class="button is-primary is-small" onclick="document.getElementById('new-folder-modal').classList.add('is-active')">
+            ＋ 新規フォルダ
+        </button>
+    </div>
+
+    {% if folders %}
+    <div class="columns is-multiline">
+        {% for folder in folders %}
+        <div class="column is-one-third">
+            <div class="card">
+                <div class="card-content">
+                    <div class="is-flex is-justify-content-space-between is-align-items-center">
+                        <div>
+                            <a href="{{ url_for('board', folder_id=folder.id) }}" class="is-size-5" style="font-weight:bold; text-decoration:none;">
+                                📁 {{ folder.name }}
+                            </a>
+                            {% if folder.user_id != current_user_id %}
+                            <p class="is-size-7" style="color:#aaa; margin-top:2px;">{{ folder.owner.username }}</p>
+                            {% endif %}
+                        </div>
+                        {% if folder.user_id == current_user_id %}
+                        <form method="POST" action="{{ url_for('folder_delete', folder_id=folder.id) }}"
+                              onsubmit="return confirm('「{{ folder.name }}」を削除しますか？\n中の付箋もすべて削除されます。')">
+                            <button class="delete" type="submit" title="削除"></button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="has-text-centered" style="padding:4rem; color:#aaa;">
+        <p class="is-size-5">フォルダがありません</p>
+        <p class="is-size-7 mt-2">「＋ 新規フォルダ」から作成してください</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- 新規フォルダ作成モーダル -->
+<div id="new-folder-modal" class="modal">
+    <div class="modal-background" onclick="this.parentElement.classList.remove('is-active')"></div>
+    <div class="modal-card" style="max-width:400px;">
+        <header class="modal-card-head">
+            <p class="modal-card-title">新規フォルダ</p>
+            <button class="delete" onclick="document.getElementById('new-folder-modal').classList.remove('is-active')"></button>
+        </header>
+        <section class="modal-card-body">
+            <form method="POST" action="{{ url_for('folder_new') }}" id="new-folder-form">
+                <div class="field">
+                    <label class="label">フォルダ名</label>
+                    <div class="control">
+                        <input class="input" type="text" name="name" placeholder="例: 企画案、技術メモ" autofocus>
+                    </div>
+                </div>
+            </form>
+        </section>
+        <footer class="modal-card-foot">
+            <button class="button is-primary" onclick="document.getElementById('new-folder-form').submit()">作成</button>
+            <button class="button" onclick="document.getElementById('new-folder-modal').classList.remove('is-active')">キャンセル</button>
+        </footer>
+    </div>
+</div>
+{% endblock %}

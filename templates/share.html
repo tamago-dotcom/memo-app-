@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block contents %}
+<div class="container" style="max-width:700px;">
+    <div class="card p-5">
+        <div class="mb-3">
+            <span class="tag is-success">公開メモ</span>
+        </div>
+        <h1 class="is-size-4 mb-4" style="font-weight:bold;">{{ memo.title }}</h1>
+        <div class="content" id="memo-body"></div>
+        <hr>
+        <p class="is-size-7" style="color:#aaa;">
+            最終更新: {{ memo.updated_at.strftime('%Y/%m/%d %H:%M') if memo.updated_at else '' }}
+        </p>
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+    document.getElementById('memo-body').innerHTML = marked.parse({{ memo.body | tojson }});
+</script>
+{% endblock %}

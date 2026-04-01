@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css">
+    <title>Memo App</title>
+    <style>
+        /* ダークモード */
+        [data-theme="dark"] body { background-color: #1a1a2e; color: #e0e0e0; }
+        [data-theme="dark"] .card { background-color: #16213e; color: #e0e0e0; }
+        [data-theme="dark"] .navbar, [data-theme="dark"] .app-header { background-color: #0d3b66 !important; }
+        [data-theme="dark"] .input, [data-theme="dark"] .textarea, [data-theme="dark"] .select select {
+            background-color: #2a2a4a; color: #e0e0e0; border-color: #555;
+        }
+        [data-theme="dark"] .modal-card { background-color: #16213e; }
+        [data-theme="dark"] .modal-card-head, [data-theme="dark"] .modal-card-foot {
+            background-color: #0d3b66; border-color: #555;
+        }
+        [data-theme="dark"] .modal-card-title { color: #e0e0e0; }
+        [data-theme="dark"] .label { color: #c0c0c0; }
+        [data-theme="dark"] .notification.is-danger { background-color: #7a1a2e; color: #ffd0d0; }
+        [data-theme="dark"] .notification.is-success { background-color: #1a4a2e; color: #d0ffd0; }
+    </style>
+</head>
+<body class="p-3">
+    <div class="p-4 app-header has-background-info-dark" style="display:flex; align-items:center; justify-content:space-between; margin:-0.75rem -0.75rem 1rem;">
+        <a href="/" style="text-decoration:none;">
+            <h1 class="is-size-4 has-text-white" style="font-weight:bold;">📌 Memo App</h1>
+        </a>
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+            {% if session.get('username') %}
+            <span class="has-text-white is-size-7">{{ session['username'] }}</span>
+            <form method="POST" action="/logout" style="margin:0;">
+                <button class="button is-small is-light" type="submit">ログアウト</button>
+            </form>
+            {% endif %}
+            <button class="button is-small" id="theme-toggle" title="ダークモード切替">🌙</button>
+        </div>
+    </div>
+    {% block contents %}{% endblock %}
+    <script>
+        // ダークモード: localStorageから状態を復元
+        const html = document.documentElement;
+        const btn = document.getElementById('theme-toggle');
+        const saved = localStorage.getItem('theme') || 'light';
+        html.setAttribute('data-theme', saved);
+        btn.textContent = saved === 'dark' ? '☀️' : '🌙';
+
+        btn.addEventListener('click', () => {
+            const current = html.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+            btn.textContent = next === 'dark' ? '☀️' : '🌙';
+        });
+    </script>
+</body>
+</html>
